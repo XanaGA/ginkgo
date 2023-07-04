@@ -89,6 +89,7 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
         b->get_const_values(),
         std::array<acc::size_type, 1>{
             {static_cast<acc::size_type>(b->get_stride())}});
+    const IndexType* __restrict col_ptr = a->get_const_col_idxs();
 
 #pragma omp parallel for
     for (size_type row = 0; row < a->get_size()[0]; row++) {
@@ -96,7 +97,7 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
         partial_sum.fill(zero<arithmetic_type>());
         for (size_type i = 0; i < num_stored_elements_per_row; i++) {
             arithmetic_type val = a_vals(row + i * stride);
-            auto col = a->col_at(row, i);
+            auto col = col_ptr[row + a->get_stride() * i];
             if (col != invalid_index<IndexType>()) {
 #pragma unroll
                 for (size_type j = 0; j < num_rhs; j++) {
