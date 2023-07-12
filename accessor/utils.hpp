@@ -51,6 +51,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define GKO_ACC_ATTRIBUTES
 #define GKO_ACC_INLINE inline
 #define GKO_ACC_RESTRICT __restrict
+// #define GKO_ACC_RESTRICT
 #endif  // defined(__CUDACC__) || defined(__HIPCC__)
 
 

@@ -90,24 +90,75 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
         std::array<acc::size_type, 1>{
             {static_cast<acc::size_type>(b->get_stride())}});
     const IndexType* __restrict col_ptr = a->get_const_col_idxs();
+    // const IndexType* col_ptr = a->get_const_col_idxs();
 
 #pragma omp parallel for
-    for (size_type row = 0; row < a->get_size()[0]; row++) {
-        std::array<arithmetic_type, num_rhs> partial_sum;
+    for (size_type first_row = 0; first_row < a->get_size()[0] - 3;
+         first_row += 4) {
+        std::array<arithmetic_type, 4> values;
+        IndexType cols[4];
+        std::array<arithmetic_type, 4 * num_rhs> partial_sum;
         partial_sum.fill(zero<arithmetic_type>());
+
         for (size_type i = 0; i < num_stored_elements_per_row; i++) {
-            arithmetic_type val = a_vals(row + i * stride);
-            auto col = col_ptr[row + a->get_stride() * i];
-            if (col != invalid_index<IndexType>()) {
 #pragma unroll
-                for (size_type j = 0; j < num_rhs; j++) {
-                    partial_sum[j] += val * b_vals(col, j);
+            for (size_type next = 0; next < 4; next++) {
+                values[next] = a_vals((first_row + next) + i * stride);
+                cols[next] = col_ptr[(first_row + next) + i * stride];
+            }
+#pragma unroll
+            for (size_type next = 0; next < 4; next++) {
+                if (cols[next] != invalid_index<IndexType>()) {
+#pragma unroll
+                    for (size_type j = 0; j < num_rhs; j++) {
+                        partial_sum[next * num_rhs + j] +=
+                            values[next] * b_vals(cols[next], j);
+                    }
                 }
             }
         }
+
 #pragma unroll
-        for (size_type j = 0; j < num_rhs; j++) {
-            [&] { c->at(row, j) = out(row, j, partial_sum[j]); }();
+        for (size_type next = 0; next < 4; next++) {
+#pragma unroll
+            for (size_type j = 0; j < num_rhs; j++) {
+                // std::cout << "First row: " << first_row << "\n";
+                // std::cout << "Next row: " <<  next << "\n";
+                // std::cout << "First + next: " << first_row + next << "\n";
+                // std::cout << j << "\n";
+                [&] {
+                    c->at((first_row + next), j) = out(
+                        first_row + next, j, partial_sum[next * num_rhs + j]);
+                }();
+                // std::cout << "-----------------------" << "\n" ;
+            }
+        }
+    }
+
+
+    size_type rest = a->get_size()[0] % 4;
+    // std::cout << "Rest: " << rest << "\n";
+    if (rest != 0) {
+        size_type last = 4 * (size_type)(a->get_size()[0] / 4);
+        // std::cout << "Last: " <<  last << "\n";
+
+        for (size_type row = last; row < a->get_size()[0]; row++) {
+            std::array<arithmetic_type, num_rhs> partial_sum;
+            partial_sum.fill(zero<arithmetic_type>());
+            for (size_type i = 0; i < num_stored_elements_per_row; i++) {
+                arithmetic_type val = a_vals(row + i * stride);
+                auto col = col_ptr[row + i * stride];
+                if (col != invalid_index<IndexType>()) {
+#pragma unroll
+                    for (size_type j = 0; j < num_rhs; j++) {
+                        partial_sum[j] += val * b_vals(col, j);
+                    }
+                }
+            }
+#pragma unroll
+            for (size_type j = 0; j < num_rhs; j++) {
+                [&] { c->at(row, j) = out(row, j, partial_sum[j]); }();
+            }
         }
     }
 }
