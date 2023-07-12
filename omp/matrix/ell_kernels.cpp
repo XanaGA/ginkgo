@@ -75,6 +75,7 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
     using b_accessor =
         gko::acc::reduced_row_major<2, arithmetic_type, const InputValueType>;
 
+    constexpr int vect_size = 4;
     const auto num_stored_elements_per_row =
         a->get_num_stored_elements_per_row();
     const auto stride = a->get_stride();
@@ -93,21 +94,22 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
     // const IndexType* col_ptr = a->get_const_col_idxs();
 
 #pragma omp parallel for
-    for (size_type first_row = 0; first_row < a->get_size()[0] - 3;
-         first_row += 4) {
-        std::array<arithmetic_type, 4> values;
-        IndexType cols[4];
-        std::array<arithmetic_type, 4 * num_rhs> partial_sum;
+    for (size_type first_row = 0;
+         first_row < a->get_size()[0] - (vect_size - 1);
+         first_row += vect_size) {
+        std::array<arithmetic_type, vect_size> values;
+        IndexType cols[vect_size];
+        std::array<arithmetic_type, vect_size * num_rhs> partial_sum;
         partial_sum.fill(zero<arithmetic_type>());
 
         for (size_type i = 0; i < num_stored_elements_per_row; i++) {
 #pragma unroll
-            for (size_type next = 0; next < 4; next++) {
+            for (size_type next = 0; next < vect_size; next++) {
                 values[next] = a_vals((first_row + next) + i * stride);
                 cols[next] = col_ptr[(first_row + next) + i * stride];
             }
 #pragma unroll
-            for (size_type next = 0; next < 4; next++) {
+            for (size_type next = 0; next < vect_size; next++) {
                 if (cols[next] != invalid_index<IndexType>()) {
 #pragma unroll
                     for (size_type j = 0; j < num_rhs; j++) {
@@ -119,7 +121,7 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
         }
 
 #pragma unroll
-        for (size_type next = 0; next < 4; next++) {
+        for (size_type next = 0; next < vect_size; next++) {
 #pragma unroll
             for (size_type j = 0; j < num_rhs; j++) {
                 // std::cout << "First row: " << first_row << "\n";
@@ -136,10 +138,10 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
     }
 
 
-    size_type rest = a->get_size()[0] % 4;
+    size_type rest = a->get_size()[0] % vect_size;
     // std::cout << "Rest: " << rest << "\n";
     if (rest != 0) {
-        size_type last = 4 * (size_type)(a->get_size()[0] / 4);
+        size_type last = vect_size * (size_type)(a->get_size()[0] / vect_size);
         // std::cout << "Last: " <<  last << "\n";
 
         for (size_type row = last; row < a->get_size()[0]; row++) {
