@@ -262,6 +262,19 @@ void convert_to_ell(std::shared_ptr<const DefaultExecutor> exec,
             }
         }
     }
+    // Detect invalid_index and fill it with the last valid index
+#pragma omp parallel for
+    for (size_type i = 0; i < max_nnz_per_row; i++) {
+        IndexType last_valid_col_idx{};
+        for (size_type j = 0; j < result->get_stride(); j++) {
+            const auto curr_col = result->col_at(j, i);
+            if (curr_col == invalid_index<IndexType>()) {
+                result->col_at(j, i) = last_valid_col_idx;
+            } else {
+                last_valid_col_idx = curr_col;
+            }
+        }
+    }
 }
 
 GKO_INSTANTIATE_FOR_EACH_VALUE_AND_INDEX_TYPE(
