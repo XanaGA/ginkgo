@@ -110,6 +110,7 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
             }
 #pragma unroll
             for (size_type next = 0; next < vect_size; next++) {
+                // std::cout << "Col Index: " << cols[next] << "\n";
                 if (cols[next] != invalid_index<IndexType>()) {
 #pragma unroll
                     for (size_type j = 0; j < num_rhs; j++) {

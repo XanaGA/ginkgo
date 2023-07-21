@@ -179,13 +179,15 @@ void fill_in_matrix_data(std::shared_ptr<const DefaultExecutor> exec,
         const auto row_begin = row_ptrs[row];
         const auto row_end = row_ptrs[row + 1];
         size_type col_idx = 0;
+        IndexType last_valid_col_idx{};
         for (auto i = row_begin; i < row_end; i++) {
-            output->col_at(row, col_idx) = data.get_const_col_idxs()[i];
+            last_valid_col_idx = data.get_const_col_idxs()[i];
+            output->col_at(row, col_idx) = last_valid_col_idx;
             output->val_at(row, col_idx) = data.get_const_values()[i];
             col_idx++;
         }
         for (; col_idx < output->get_num_stored_elements_per_row(); col_idx++) {
-            output->col_at(row, col_idx) = invalid_index<IndexType>();
+            output->col_at(row, col_idx) = last_valid_col_idx;
             output->val_at(row, col_idx) = zero<ValueType>();
         }
     }
@@ -208,8 +210,9 @@ void fill_in_dense(std::shared_ptr<const ReferenceExecutor> exec,
     for (size_type row = 0; row < num_rows; row++) {
         for (size_type i = 0; i < num_stored_elements_per_row; i++) {
             const auto col = source->col_at(row, i);
-            if (col != invalid_index<IndexType>()) {
-                result->at(row, col) = source->val_at(row, i);
+            const auto val = source->val_at(row, i);
+            if (val != zero(val)) {
+                result->at(row, col) = val;
             }
         }
     }
@@ -280,7 +283,7 @@ void count_nonzeros_per_row(std::shared_ptr<const ReferenceExecutor> exec,
     for (size_type row = 0; row < num_rows; row++) {
         size_type nonzeros_in_this_row = 0;
         for (size_type i = 0; i < max_nnz_per_row; i++) {
-            if (source->col_at(row, i) != invalid_index<IndexType>()) {
+            if (source->val_at(row, i) != zero<ValueType>()) {
                 nonzeros_in_this_row++;
             }
         }
