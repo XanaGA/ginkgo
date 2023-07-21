@@ -110,12 +110,10 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
             }
 #pragma unroll
             for (size_type next = 0; next < vect_size; next++) {
-                if (cols[next] != invalid_index<IndexType>()) {
 #pragma unroll
-                    for (size_type j = 0; j < num_rhs; j++) {
-                        partial_sum[next * num_rhs + j] +=
-                            values[next] * b_vals(cols[next], j);
-                    }
+                for (size_type j = 0; j < num_rhs; j++) {
+                    partial_sum[next * num_rhs + j] +=
+                        values[next] * b_vals(cols[next], j);
                 }
             }
         }
@@ -150,11 +148,9 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
             for (size_type i = 0; i < num_stored_elements_per_row; i++) {
                 arithmetic_type val = a_vals(row + i * stride);
                 auto col = col_ptr[row + i * stride];
-                if (col != invalid_index<IndexType>()) {
 #pragma unroll
-                    for (size_type j = 0; j < num_rhs; j++) {
-                        partial_sum[j] += val * b_vals(col, j);
-                    }
+                for (size_type j = 0; j < num_rhs; j++) {
+                    partial_sum[j] += val * b_vals(col, j);
                 }
             }
 #pragma unroll

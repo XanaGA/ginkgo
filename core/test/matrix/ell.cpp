@@ -62,7 +62,7 @@ protected:
         c[2] = 1;
         c[3] = 1;
         c[4] = 2;
-        c[5] = invalid_index;
+        c[5] = 1;
         v[0] = 1.0;
         v[1] = 0.0;
         v[2] = 3.0;
@@ -89,7 +89,7 @@ protected:
         EXPECT_EQ(c[2], 1);
         EXPECT_EQ(c[3], 1);
         EXPECT_EQ(c[4], 2);
-        EXPECT_EQ(c[5], invalid_index);
+        EXPECT_EQ(c[5], 1);
         EXPECT_EQ(v[0], value_type{1.0});
         EXPECT_EQ(v[1], value_type{0.0});
         EXPECT_EQ(v[2], value_type{3.0});
