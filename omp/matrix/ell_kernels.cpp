@@ -211,14 +211,12 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
                 _mm256_loadu_si256(reinterpret_cast<const __m256i*>(
                     &col_ptr[first_row + i * stride]));
             // std::cout << "------------------------------ " << "\n";
-            for (size_type next = 0; next < vect_size; next++) {
-                // std::cout << "INDEX: " << col_ptr[first_row + next + i *
-                // stride] << "\n"; std::cout << "INDEX_vect: " <<
-                // col_idxs_vect[next] << "\n";
-                b_values_vect[next] =
-                    b_vals[col_ptr[first_row + next + i * stride]];
-            }
-            // b_values_vect = _mm512_i32gather_pd(col_idxs_vect, b_vals, 1);
+            // for (size_type next = 0; next < vect_size; next++) {
+            //     b_values_vect[next] =
+            //         b_vals[col_ptr[first_row + next + i * stride]];
+            // }
+            b_values_vect =
+                _mm512_i32gather_pd(col_idxs_vect, b_vals, sizeof(double));
 
             // for (size_type next = 0; next < vect_size; next++) {
             //     std::cout << "INDEX: " << (first_row+next) + i * stride <<
