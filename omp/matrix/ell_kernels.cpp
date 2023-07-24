@@ -48,6 +48,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "accessor/reduced_row_major.hpp"
 #include "core/base/mixed_precision_types.hpp"
 
+#include <immintrin.h>
+
 
 namespace gko {
 namespace kernels {
@@ -162,6 +164,156 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
 }
 
 
+template <int num_rhs>
+void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
+                         const matrix::Ell<double, int>* a,
+                         const matrix::Dense<double>* b,
+                         matrix::Dense<double>* c)
+{
+    GKO_ASSERT(b->get_size()[1] == num_rhs);
+    using arithmetic_type = highest_precision<double, double, double>;
+    using a_accessor =
+        gko::acc::reduced_row_major<1, arithmetic_type, const double>;
+    using b_accessor =
+        gko::acc::reduced_row_major<2, arithmetic_type, const double>;
+
+    // num_rhs = 1;
+    constexpr int vect_size = 8;
+    const auto num_stored_elements_per_row =
+        a->get_num_stored_elements_per_row();
+    const auto stride = a->get_stride();
+    const auto a_vals = a->get_const_values();
+    const auto b_vals = b->get_const_values();
+    const int* __restrict col_ptr = a->get_const_col_idxs();
+    // const int* col_ptr = a->get_const_col_idxs();
+
+#pragma omp parallel for
+    for (size_type first_row = 0;
+         first_row < a->get_size()[0] - (vect_size - 1);
+         first_row += vect_size) {
+        __m512d a_values_vect;
+
+        int b_values[vect_size];
+        __m512d b_values_vect;
+
+        // std::cout << "Before zero fill" << "\n";
+        __m512d partial_sum_vect;
+        partial_sum_vect = _mm512_setzero_pd();
+
+        double partial_sum[vect_size];
+
+        // std::cout << "Before for" << "\n";
+        for (size_type i = 0; i < num_stored_elements_per_row; i++) {
+            // std::cout << "Before a_values" << "\n";
+            a_values_vect = _mm512_loadu_pd(&a_vals[first_row + i * stride]);
+            // std::cout << "Before b_values" << "\n";
+            __m256i col_idxs_vect =
+                _mm256_loadu_si256(reinterpret_cast<const __m256i*>(
+                    &col_ptr[first_row + i * stride]));
+            // std::cout << "------------------------------ " << "\n";
+            for (size_type next = 0; next < vect_size; next++) {
+                // std::cout << "INDEX: " << col_ptr[first_row + next + i *
+                // stride] << "\n"; std::cout << "INDEX_vect: " <<
+                // col_idxs_vect[next] << "\n";
+                b_values_vect[next] =
+                    b_vals[col_ptr[first_row + next + i * stride]];
+            }
+            // b_values_vect = _mm512_i32gather_pd(col_idxs_vect, b_vals, 1);
+
+            // for (size_type next = 0; next < vect_size; next++) {
+            //     std::cout << "INDEX: " << (first_row+next) + i * stride <<
+            //     "\n"; std::cout << "a_vals: " << a_vals[(first_row+next) + i
+            //     * stride] << "\n";
+            //     // a_values_vect[next] = a_vals[(first_row+next) + i *
+            //     stride]; std::cout << "a_values_vect: " <<
+            //     a_values_vect[next] << "\n";
+
+            //     std::cout << "col_ptr[]: " << col_ptr[(first_row + next) + i
+            //     * stride] << "\n";
+            //     // b_values_vect[next] = b_values[col_ptr[(first_row + next)
+            //     + i * stride]]; std::cout << "b_values_vect: " <<
+            //     b_values_vect[next] << "\n";
+            // }
+
+            // a_values_vect = _mm512_set_pd(a_vals(first_row + i * stride),
+            //                                 a_vals((first_row+1) + i *
+            //                                 stride), a_vals((first_row+2) + i
+            //                                 * stride), a_vals((first_row+3) +
+            //                                 i * stride), a_vals((first_row+4)
+            //                                 + i * stride),
+            //                                 a_vals((first_row+5) + i *
+            //                                 stride), a_vals((first_row+6) + i
+            //                                 * stride), a_vals((first_row+7) +
+            //                                 i * stride));
+
+            // std::cout << "INDEX: " << first_row + i * stride << "\n";
+            // b_values_vect = _mm512_set_pd(b_values[col_ptr[first_row + i *
+            // stride]],
+            //                                 b_values[col_ptr[(first_row + 1)
+            //                                 + i * stride]],
+            //                                 b_values[col_ptr[(first_row + 2)
+            //                                 + i * stride]],
+            //                                 b_values[col_ptr[(first_row + 3)
+            //                                 + i * stride]],
+            //                                 b_values[col_ptr[(first_row + 4)
+            //                                 + i * stride]],
+            //                                 b_values[col_ptr[(first_row + 5)
+            //                                 + i * stride]],
+            //                                 b_values[col_ptr[(first_row + 6)
+            //                                 + i * stride]],
+            //                                 b_values[col_ptr[(first_row + 7)
+            //                                 + i * stride]]);
+
+            partial_sum_vect =
+                _mm512_fmadd_pd(a_values_vect, b_values_vect, partial_sum_vect);
+            // std::cout << "-------------------------------\n";
+            // std::cout << "a_values_vect["<< 7 <<"]: " << a_values_vect[7] <<
+            // "\n"; std::cout << "b_values_vect["<< 7 <<"]: " <<
+            // b_values_vect[7] << "\n"; std::cout << "partial_sum_vect["<< 0
+            // <<"]: " << partial_sum_vect[0] << "\n";
+            for (size_type next = 0; next < vect_size; next++) {
+                // std::cout << "partial_sum_vect["<< next <<"]: " <<
+                // partial_sum_vect[next] << "\n";
+            }
+        }
+
+        // std::cout << "Before store" << "\n";
+        // _mm512_storeu_pd(partial_sum, partial_sum_vect);
+
+        // std::cout << "Before c_at" << "\n";
+#pragma unroll
+        for (size_type next = 0; next < vect_size; next++) {
+            [&] { c->at((first_row + next), 0) = partial_sum_vect[next]; }();
+        }
+    }
+
+
+    size_type rest = a->get_size()[0] % vect_size;
+    // std::cout << "Rest: " << rest << "\n";
+    if (rest != 0) {
+        size_type last = vect_size * (size_type)(a->get_size()[0] / vect_size);
+        // std::cout << "Last: " <<  last << "\n";
+
+        for (size_type row = last; row < a->get_size()[0]; row++) {
+            std::array<arithmetic_type, num_rhs> partial_sum;
+            partial_sum.fill(zero<arithmetic_type>());
+            for (size_type i = 0; i < num_stored_elements_per_row; i++) {
+                arithmetic_type val = a_vals[row + i * stride];
+                auto col = col_ptr[row + i * stride];
+#pragma unroll
+                for (size_type j = 0; j < num_rhs; j++) {
+                    partial_sum[j] += val * b_vals[col];
+                }
+            }
+#pragma unroll
+            for (size_type j = 0; j < num_rhs; j++) {
+                [&] { c->at(row, j) = partial_sum[j]; }();
+            }
+        }
+    }
+}
+
+
 template <int block_size, typename InputValueType, typename MatrixValueType,
           typename OutputValueType, typename IndexType, typename OutFn>
 void spmv_blocked(std::shared_ptr<const OmpExecutor> exec,
@@ -249,7 +401,17 @@ void spmv(std::shared_ptr<const OmpExecutor> exec,
     }
     auto out = [](auto, auto, auto value) { return value; };
     if (num_rhs == 1) {
-        spmv_small_rhs<1>(exec, a, b, c, out);
+        if (std::is_same<InputValueType, double>::value &&
+            std::is_same<MatrixValueType, double>::value &&
+            std::is_same<OutputValueType, double>::value &&
+            std::is_same<IndexType, int>::value) {
+            spmv_small_rhs_vect<1>(
+                exec, reinterpret_cast<const matrix::Ell<double, int>*>(a),
+                reinterpret_cast<const matrix::Dense<double>*>(b),
+                reinterpret_cast<matrix::Dense<double>*>(c));
+        } else {
+            spmv_small_rhs<1>(exec, a, b, c, out);
+        }
         return;
     }
     if (num_rhs == 2) {
