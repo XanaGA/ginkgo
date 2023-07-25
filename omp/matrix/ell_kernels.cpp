@@ -95,9 +95,10 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
     const IndexType* __restrict col_ptr = a->get_const_col_idxs();
     // const IndexType* col_ptr = a->get_const_col_idxs();
 
+    const size_type max_row_vectorized =
+        (a->get_size()[0] < vect_size) ? 0 : a->get_size()[0] - (vect_size - 1);
 #pragma omp parallel for
-    for (size_type first_row = 0;
-         first_row < a->get_size()[0] - (vect_size - 1);
+    for (size_type first_row = 0; first_row < max_row_vectorized;
          first_row += vect_size) {
         std::array<arithmetic_type, vect_size> values;
         IndexType cols[vect_size];
@@ -187,9 +188,10 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
     const int* __restrict col_ptr = a->get_const_col_idxs();
     // const int* col_ptr = a->get_const_col_idxs();
 
+    const size_type max_row_vectorized =
+        (a->get_size()[0] < vect_size) ? 0 : a->get_size()[0] - (vect_size - 1);
 #pragma omp parallel for
-    for (size_type first_row = 0;
-         first_row < a->get_size()[0] - (vect_size - 1);
+    for (size_type first_row = 0; first_row < max_row_vectorized;
          first_row += vect_size) {
         __m512d a_values_vect;
 
