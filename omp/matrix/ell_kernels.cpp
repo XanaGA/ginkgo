@@ -95,9 +95,10 @@ void spmv_small_rhs(std::shared_ptr<const OmpExecutor> exec,
     const IndexType* __restrict col_ptr = a->get_const_col_idxs();
     // const IndexType* col_ptr = a->get_const_col_idxs();
 
+    const size_type max_row_vectorized =
+        (a->get_size()[0] < vect_size) ? 0 : a->get_size()[0] - (vect_size - 1);
 #pragma omp parallel for
-    for (size_type first_row = 0;
-         first_row < a->get_size()[0] - (vect_size - 1);
+    for (size_type first_row = 0; first_row < max_row_vectorized;
          first_row += vect_size) {
         std::array<arithmetic_type, vect_size> values;
         IndexType cols[vect_size];
@@ -192,8 +193,10 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
     // const int* col_ptr = a->get_const_col_idxs();
 
 
+    const size_type max_row_vectorized =
+        (a->get_size()[0] < vect_size) ? 0 : a->get_size()[0] - (vect_size - 1);
 #pragma omp parallel for
-    for (int first_row = 0; first_row < a->get_size()[0] - (vect_size - 1);
+    for (size_type first_row = 0; first_row < max_row_vectorized;
          first_row += vect_size) {
         __m512d a_values_vect;
 
@@ -405,17 +408,7 @@ void advanced_spmv(std::shared_ptr<const OmpExecutor> exec,
         return alpha_val * value + beta_val * arithmetic_type{c->at(i, j)};
     };
     if (num_rhs == 1) {
-        if (std::is_same<InputValueType, double>::value &&
-            std::is_same<MatrixValueType, double>::value &&
-            std::is_same<OutputValueType, double>::value &&
-            std::is_same<IndexType, int>::value) {
-            spmv_small_rhs_vect<1>(
-                exec, reinterpret_cast<const matrix::Ell<double, int>*>(a),
-                reinterpret_cast<const matrix::Dense<double>*>(b),
-                reinterpret_cast<matrix::Dense<double>*>(c));
-        } else {
-            spmv_small_rhs<1>(exec, a, b, c, out);
-        }
+        spmv_small_rhs<1>(exec, a, b, c, out);
         return;
     }
     if (num_rhs == 2) {
