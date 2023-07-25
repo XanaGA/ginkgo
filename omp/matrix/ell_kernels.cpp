@@ -193,8 +193,7 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
 
 
 #pragma omp parallel for
-    for (size_type first_row = 0;
-         first_row < a->get_size()[0] - (vect_size - 1);
+    for (int first_row = 0; first_row < a->get_size()[0] - (vect_size - 1);
          first_row += vect_size) {
         __m512d a_values_vect;
 
@@ -218,6 +217,11 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
                 _mm256_loadu_si256(reinterpret_cast<const __m256i*>(
                     &col_ptr[first_row + i * stride]));
 
+            // int * print_vect = _mm256_store_epi64(col_idxs_vect);
+            // for (int next = 0; next < vect_size; next ++){
+            //     std::cout << "Column " << print_vect[next] << "\n";
+            // }
+
             mask = _mm256_cmp_epi32_mask(minus_one_vect, col_idxs_vect, 4);
 
             b_values_vect = _mm512_mask_i32gather_pd(
@@ -229,31 +233,31 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
         }
 
 #pragma unroll
-        for (size_type next = 0; next < vect_size; next++) {
+        for (int next = 0; next < vect_size; next++) {
             [&] { c->at((first_row + next), 0) = partial_sum_vect[next]; }();
         }
     }
 
 
-    size_type rest = a->get_size()[0] % vect_size;
+    int rest = a->get_size()[0] % vect_size;
     // std::cout << "Rest: " << rest << "\n";
     if (rest != 0) {
-        size_type last = vect_size * (size_type)(a->get_size()[0] / vect_size);
+        int last = vect_size * (int)(a->get_size()[0] / vect_size);
         // std::cout << "Last: " <<  last << "\n";
 
-        for (size_type row = last; row < a->get_size()[0]; row++) {
+        for (int row = last; row < a->get_size()[0]; row++) {
             std::array<arithmetic_type, num_rhs> partial_sum;
             partial_sum.fill(zero<arithmetic_type>());
-            for (size_type i = 0; i < num_stored_elements_per_row; i++) {
+            for (int i = 0; i < num_stored_elements_per_row; i++) {
                 arithmetic_type val = a_vals[row + i * stride];
                 auto col = col_ptr[row + i * stride];
 #pragma unroll
-                for (size_type j = 0; j < num_rhs; j++) {
+                for (int j = 0; j < num_rhs; j++) {
                     partial_sum[j] += val * b_vals[col];
                 }
             }
 #pragma unroll
-            for (size_type j = 0; j < num_rhs; j++) {
+            for (int j = 0; j < num_rhs; j++) {
                 [&] { c->at(row, j) = partial_sum[j]; }();
             }
         }
@@ -401,7 +405,17 @@ void advanced_spmv(std::shared_ptr<const OmpExecutor> exec,
         return alpha_val * value + beta_val * arithmetic_type{c->at(i, j)};
     };
     if (num_rhs == 1) {
-        spmv_small_rhs<1>(exec, a, b, c, out);
+        if (std::is_same<InputValueType, double>::value &&
+            std::is_same<MatrixValueType, double>::value &&
+            std::is_same<OutputValueType, double>::value &&
+            std::is_same<IndexType, int>::value) {
+            spmv_small_rhs_vect<1>(
+                exec, reinterpret_cast<const matrix::Ell<double, int>*>(a),
+                reinterpret_cast<const matrix::Dense<double>*>(b),
+                reinterpret_cast<matrix::Dense<double>*>(c));
+        } else {
+            spmv_small_rhs<1>(exec, a, b, c, out);
+        }
         return;
     }
     if (num_rhs == 2) {
