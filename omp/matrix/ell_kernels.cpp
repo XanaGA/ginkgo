@@ -49,6 +49,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "core/base/mixed_precision_types.hpp"
 
 #include <immintrin.h>
+#include <iomanip>
+constexpr int default_width_i{2};
+constexpr int default_width_f{4};
 
 
 namespace gko {
@@ -61,6 +64,63 @@ namespace omp {
  */
 namespace ell {
 
+void print_vector_epi32(__m256i vect)
+
+{
+    std::array<std::int32_t, 8> tmp;
+
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(tmp.data()), vect);
+
+    for (const auto& el : tmp) {
+        std::cout << std::setw(default_width_i) << el << ' ';
+    }
+
+    std::cout << '\n';
+}
+
+void print_vector_epi64(__m256i vect)
+
+{
+    std::array<std::int64_t, 4> tmp;
+
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(tmp.data()), vect);
+
+    for (const auto& el : tmp) {
+        std::cout << std::setw(default_width_i) << el << ' ';
+    }
+
+    std::cout << '\n';
+}
+
+
+void print_vector_pd(__m256d vect)
+
+{
+    std::array<double, 4> tmp;
+
+    _mm256_storeu_pd(tmp.data(), vect);
+
+    for (const auto& el : tmp) {
+        std::cout << std::setw(default_width_f) << el << ' ';
+    }
+
+    std::cout << '\n';
+}
+
+
+void print_vector_pd(__m512d vect)
+
+{
+    std::array<double, 8> tmp;
+
+    _mm512_storeu_pd(tmp.data(), vect);
+
+    for (const auto& el : tmp) {
+        std::cout << std::setw(default_width_f) << el << ' ';
+    }
+
+    std::cout << '\n';
+}
 
 template <int num_rhs, typename InputValueType, typename MatrixValueType,
           typename OutputValueType, typename IndexType, typename OutFn>
@@ -189,6 +249,7 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
     const auto stride = a->get_stride();
     const auto a_vals = a->get_const_values();
     const auto b_vals = b->get_const_values();
+    const auto b_stride = b->get_stride();
     const int* __restrict col_ptr = a->get_const_col_idxs();
     // const int* col_ptr = a->get_const_col_idxs();
 
@@ -204,6 +265,7 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
         __m512d b_values_vect;
 
         // std::cout << "Before zero fill" << "\n";
+        double partial_sum[8];
         __m512d partial_sum_vect;
         partial_sum_vect = _mm512_setzero_pd();
 
@@ -211,6 +273,7 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
         zero_vect = _mm512_setzero_pd();
         __mmask8 mask;
         __m256i minus_one_vect = _mm256_set1_epi32(-1);
+        __m256i b_stride_vect = _mm256_set1_epi32(static_cast<int32>(b_stride));
 
         // std::cout << "Before for" << "\n";
         for (size_type i = 0; i < num_stored_elements_per_row; i++) {
@@ -220,24 +283,26 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
                 _mm256_loadu_si256(reinterpret_cast<const __m256i*>(
                     &col_ptr[first_row + i * stride]));
 
-            // int * print_vect = _mm256_store_epi64(col_idxs_vect);
-            // for (int next = 0; next < vect_size; next ++){
-            //     std::cout << "Column " << print_vect[next] << "\n";
-            // }
+            // std::cout << "-------------- COL INDEX VECTOR ----------------"
+            // << "\n"; print_vector_epi32(col_idxs_vect);
 
             mask = _mm256_cmp_epi32_mask(minus_one_vect, col_idxs_vect, 4);
+            col_idxs_vect = _mm256_mullo_epi32(col_idxs_vect, b_stride_vect);
 
             b_values_vect = _mm512_mask_i32gather_pd(
                 zero_vect, mask, col_idxs_vect, b_vals, sizeof(double));
             // _mm512_i32gather_pd(col_idxs_vect, b_vals, sizeof(double));
+            // std::cout << "-------------- GATHER VECTOR ----------------" <<
+            // "\n"; print_vector_pd(b_values_vect);
 
             partial_sum_vect =
                 _mm512_fmadd_pd(a_values_vect, b_values_vect, partial_sum_vect);
         }
 
+        _mm512_storeu_pd(partial_sum, partial_sum_vect);
 #pragma unroll
         for (int next = 0; next < vect_size; next++) {
-            [&] { c->at((first_row + next), 0) = partial_sum_vect[next]; }();
+            [&] { c->at((first_row + next), 0) = partial_sum[next]; }();
         }
     }
 
@@ -256,7 +321,7 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
                 auto col = col_ptr[row + i * stride];
 #pragma unroll
                 for (int j = 0; j < num_rhs; j++) {
-                    partial_sum[j] += val * b_vals[col];
+                    partial_sum[j] += val * b_vals[col * b_stride];
                 }
             }
 #pragma unroll
