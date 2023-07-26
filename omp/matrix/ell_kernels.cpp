@@ -249,7 +249,6 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
     const auto stride = a->get_stride();
     const auto a_vals = a->get_const_values();
     const auto b_vals = b->get_const_values();
-    const auto b_stride = b->get_stride();
     const int* __restrict col_ptr = a->get_const_col_idxs();
     // const int* col_ptr = a->get_const_col_idxs();
 
@@ -273,7 +272,6 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
         zero_vect = _mm512_setzero_pd();
         __mmask8 mask;
         __m256i minus_one_vect = _mm256_set1_epi32(-1);
-        __m256i b_stride_vect = _mm256_set1_epi32(static_cast<int32>(b_stride));
 
         // std::cout << "Before for" << "\n";
         for (size_type i = 0; i < num_stored_elements_per_row; i++) {
@@ -287,7 +285,6 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
             // << "\n"; print_vector_epi32(col_idxs_vect);
 
             mask = _mm256_cmp_epi32_mask(minus_one_vect, col_idxs_vect, 4);
-            col_idxs_vect = _mm256_mullo_epi32(col_idxs_vect, b_stride_vect);
 
             b_values_vect = _mm512_mask_i32gather_pd(
                 zero_vect, mask, col_idxs_vect, b_vals, sizeof(double));
@@ -321,7 +318,7 @@ void spmv_small_rhs_vect(std::shared_ptr<const OmpExecutor> exec,
                 auto col = col_ptr[row + i * stride];
 #pragma unroll
                 for (int j = 0; j < num_rhs; j++) {
-                    partial_sum[j] += val * b_vals[col * b_stride];
+                    partial_sum[j] += val * b_vals[col];
                 }
             }
 #pragma unroll
